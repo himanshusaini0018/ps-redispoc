@@ -19,25 +19,36 @@ public class HashOperationController {
         this.hashOperationService = hashOperationService;
     }
 
-
+    /*
+    Create employee in redis
+     */
     @PostMapping("employee")
     public ResponseEntity<Boolean> createEmployee(@RequestBody Employee employee){
         log.info("Received request to create employee " + employee);
         return new ResponseEntity<>(hashOperationService.saveEmployeeToRedisHash(employee), HttpStatus.CREATED);
     }
 
+    /*
+    Get employee by id from redis
+     */
     @GetMapping("employee/{id}")
     public ResponseEntity<Employee> getEmployee(@PathVariable String id){
         log.info("Received request to fetch employee " + id);
         return new ResponseEntity<>(hashOperationService.getEmployeeFromRedisHash(id), HttpStatus.FOUND);
     }
 
+    /*
+    Search employee in idx:employee index
+     */
     @PostMapping("employee/search")
     public ResponseEntity<List<Employee>> searchEmployee(@RequestBody IndexSearch search){
         log.info("Received request to search employee " + search);
         return new ResponseEntity<>(hashOperationService.searchEmployeeFromRedisHash(search), HttpStatus.OK);
     }
 
+    /*
+    Delete an employee
+     */
     @DeleteMapping("employee/{id}")
     public ResponseEntity<Boolean> deleteEmployee(@PathVariable String id){
         log.info("Received request to delete employee " + id);

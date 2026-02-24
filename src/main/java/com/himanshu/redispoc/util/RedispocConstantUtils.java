@@ -2,8 +2,8 @@ package com.himanshu.redispoc.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.himanshu.redispoc.entity.Employee;
+import io.redisearch.Document;
 import lombok.extern.slf4j.Slf4j;
-import redis.clients.jedis.search.Document;
 
 import java.util.Map;
 @Slf4j

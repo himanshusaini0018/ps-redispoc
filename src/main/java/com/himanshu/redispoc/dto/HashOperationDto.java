@@ -4,6 +4,12 @@ import com.himanshu.redispoc.entity.Employee;
 import com.himanshu.redispoc.entity.IndexSearch;
 import com.himanshu.redispoc.exception.AlreadyExistException;
 import com.himanshu.redispoc.util.RedispocConstantUtils;
+import io.redisearch.Document;
+import io.redisearch.Query;
+import io.redisearch.Schema;
+import io.redisearch.SearchResult;
+import io.redisearch.client.Client;
+import io.redisearch.client.IndexDefinition;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -12,8 +18,7 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.stereotype.Component;
-import redis.clients.jedis.JedisPooled;
-import redis.clients.jedis.search.*;
+import redis.clients.jedis.JedisPool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,11 +29,13 @@ import java.util.Map;
 public class HashOperationDto {
 
     RedisTemplate<String, Object> redisTemplate;
-    JedisPooled jedis;
+    JedisPool jedisPool;
+    Client searchClient;
 
-    public HashOperationDto(RedisTemplate<String,Object> redisTemplate,JedisPooled jedis) {
+    public HashOperationDto(RedisTemplate<String,Object> redisTemplate,JedisPool jedisPool) {
         this.redisTemplate = redisTemplate;
-        this.jedis = jedis;
+        this.jedisPool = jedisPool;
+        searchClient = new Client("idx:employee",jedisPool);
     }
     /*
     Creating index for employee,
@@ -47,11 +54,11 @@ public class HashOperationDto {
                         .addTagField("department")
                         .addNumericField("salary");
                 log.debug("Using schema {}",schema.fields);
-                IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.HASH)
+                IndexDefinition indexDefinition = new IndexDefinition()
+                        .setType(IndexDefinition.Type.HASH)
                         .setPrefixes("employee:");
                 log.debug("Using indexDefinition {}",indexDefinition);
-                IndexOptions indexOptions = IndexOptions.defaultOptions().setDefinition(indexDefinition);
-                jedis.ftCreate("idx:employee",indexOptions,schema);
+                searchClient.createIndex(schema,Client.IndexOptions.defaultOptions().setDefinition(indexDefinition));
                 log.info("Created index for employee in redis");
                 return null;
             } catch (Exception e) {
@@ -62,6 +69,7 @@ public class HashOperationDto {
     }
 
 
+
     /*
     Saving employee to redis instance
      */
@@ -70,6 +78,7 @@ public class HashOperationDto {
         log.info("Saving employee with id {}",value.getId());
         //Constructed key for storage in redis
         String constructedHash = RedispocConstantUtils.createHash(value.getId().toString());
+        //employee:1
         //Using session-callback for transactional operations
         return redisTemplate.execute(new SessionCallback<Boolean>() {
             @Override
@@ -82,12 +91,6 @@ public class HashOperationDto {
                     //Creating watch for constructedHash in redis db
                     ops.watch(constructedHash);
                     log.debug("Attempting to watch hash {}",constructedHash);
-                    //return if hash is already present in database
-                    if (Boolean.TRUE.equals(ops.hasKey(constructedHash))) {
-                        ops.unwatch();
-                        log.error("Employee hash {} already exists",constructedHash);
-                        throw new AlreadyExistException("Employee id already exists");
-                    }
                     try {
                         ops.multi();
                         //creating map of employee values
@@ -97,8 +100,8 @@ public class HashOperationDto {
                                 "salary", value.getSalary()
                         );
                         //making pipeline of command to be executing
+                        ops.delete(constructedHash);
                         ops.opsForHash().putAll(constructedHash, map);
-                        ops.hasKey(constructedHash);
                         log.debug("Executing insert operations for {}",constructedHash);
                         //executing all command at once
                         List<Object> execResult = ops.exec();
@@ -136,9 +139,10 @@ public class HashOperationDto {
         List<Employee> employees = new ArrayList<>();
         log.info("Fetching employees with query as {}",indexSearch);
         //Executing a index search result using jedisPooled
-        SearchResult searchResult = jedis.ftSearch("idx:employee",indexSearch.getSearchKey());
+        Query query = new Query(indexSearch.getSearchKey());
+        SearchResult searchResult = searchClient.search(query);
         log.debug("Employee list: {}",searchResult);
-        for(Document doc:searchResult.getDocuments()){
+        for(Document doc:searchResult.docs){
             //deserializing employees one by one
             Employee employee = RedispocConstantUtils.deserializeEmployeeHashSearchResults(doc);
             employees.add(employee);
